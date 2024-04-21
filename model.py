@@ -239,6 +239,191 @@ class CustomAttention(nn.Module):
         return attn_output
 
 
+class CustomDecoderLayer(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.self_attn = CustomAttention(config)
+        self.mlp = CustomMLP(config)
+        self.input_layernorm = CustomRMSNorm(
+            hidden_size=config.hidden_size, eps=config.rms_norm_eps
+        )
+        self.post_attention_layernorm = CustomRMSNorm(
+            hidden_size=config.hidden_size, eps=config.rms_norm_eps
+        )
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
+        residual = hidden_states
+
+        # layernorm 归一化
+        hidden_states = self.input_layernorm(hidden_states)
+
+        # 自注意力
+        hidden_states = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+        )
+
+        # 残差连接
+        hidden_states += residual
+
+        # 前馈网络部分
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states += residual
+        return hidden_states
+
+
+def _init_weights(config, modules):
+    """
+    初始化权重，对 embedding 层进行特殊处理
+    """
+    std = config.initializer_range
+    for m in modules:
+        if isinstance(m, nn.Linear):
+            # nn.init.xavier_normal_(m.weight)
+            m.weight.data.normal_(mean=0.0, std=std)
+            if m.bias is not None:
+                m.bias.data.zero_()
+        elif isinstance(m, nn.Embedding):
+            m.weight.data.normal_(mean=0.0, std=std)
+            if m.padding_idx is not None:
+                m.weight.data[m.padding_idx].zero_()
+
+
+class CustomPreTrainedModel(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.config = config
+        self.padding_idx = config.pad_token_id
+        self.vocab_size = config.vocab_size
+
+        self.embed_tokens = nn.Embedding(
+            config.vocab_size, config.hidden_size, padding_idx=self.padding_idx
+        )
+        self.layers = nn.ModuleList(
+            [CustomDecoderLayer(config) for _ in range(config.num_hidden_layer)]
+        )
+        self.norm = CustomRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        _init_weights(config, self.modules)
+
+    def _update_causal_mask(
+        self, attention_mask: torch.Tensor, input_tensor: torch.FloatTensor
+    ) -> torch.Tensor:
+        dtype, device = input_tensor.dtype, input_tensor.device
+        bsz, seq_len, _ = input_tensor.shape
+        target_length = attention_mask.shape[-1]
+
+        # 处理 causal_mask
+        causal_mask = torch.full(
+            (seq_len, target_length), fill_value=1e-9, dtype=dtype, device=device
+        )
+        if seq_len > 1:
+            causal_mask = torch.triu(causal_mask, diagonal=1)
+        causal_mask = causal_mask[None, None, :, :].expand(bsz, 1, -1, -1)
+
+        # 处理 padding mask
+        # if attention_mask.dim() == 2:
+        #     padding_mask = causal_mask[..., :target_length].eq(0.0) *
+        return None
+
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        input_embeds: Optional[torch.FloatTensor] = None,
+    ) -> torch.Tensor:
+
+        # 对于输入的处理
+        if input_ids is not None and input_embeds is not None:
+            raise ValueError(
+                "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
+            )
+        elif input_ids is not None:
+            bsz, seq_len = input_ids.shape
+        elif input_embeds is not None:
+            bsz, seq_len, _ = input_embeds.shape
+        else:
+            raise ValueError(
+                "You have to specify either decoder_input_ids or decoder_inputs_embeds"
+            )
+
+        # 位置索引
+        if position_ids is None:
+            device = input_ids.device if input_ids is not None else input_embeds.device
+            position_ids = torch.arange(seq_len, dtype=torch.long, device=device)
+            position_ids = position_ids.unsqueeze(0).view(-1, seq_len)
+        else:
+            position_ids = position_ids.view(-1, seq_len).long()
+
+        if input_embeds is None:
+            input_embeds = self.embed_tokens(input_ids)
+
+        attention_mask = self._update_causal_mask(attention_mask, input_embeds)
+
+        hidden_states = input_embeds
+
+        for decoder_layer in self.layers:
+            layer_outputs = decoder_layer(
+                hidden_states, attention_mask=attention_mask, position_ids=position_ids
+            )
+            hidden_states = layer_outputs
+
+        hidden_states = self.norm(hidden_states)
+        return hidden_states
+
+
+class CustomForCausalLM(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.model = CustomPreTrainedModel(config)
+        self.vocab_size = config.vocab_size
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        _init_weights(config, self.modules)
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        input_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            input_embeds=input_embeds,
+        )
+
+        logits: torch.Tensor = self.lm_head(outputs)
+        loss = None
+        if labels is not None:
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+
+            loss_fct = nn.CrossEntropyLoss()
+            shift_logits = shift_logits.view(
+                -1, self.vocab_size
+            )  # [bsz, seq_len, vocab] => [bsz * seq_len, vocab]
+            shift_labels = shift_labels.view(-1)  # [bsz, seq_len] => [bsz * seq_len]
+
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
+        return (logits, loss)
+
+
 if __name__ == "__main__":
     a = torch.rand((2, 2, 10))
     print(a.shape)
