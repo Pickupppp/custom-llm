@@ -1,5 +1,5 @@
 import math
-from typing import Union, Optional
+from typing import Tuple, Union, Optional
 
 import torch
 from torch import nn
@@ -299,6 +299,35 @@ def _init_weights(config, modules):
                 m.weight.data[m.padding_idx].zero_()
 
 
+def _update_causal_mask(
+    attention_mask: torch.LongTensor, input_tensor: torch.FloatTensor
+) -> torch.Tensor:
+    """
+    创建 causal_mask
+    :param attention_mask: (bsz, seq_len)
+    :param input_tensor: (bsz, seq_len, hidden_size)
+    """
+    dtype, device = input_tensor.dtype, input_tensor.device
+    bsz, seq_len, _ = input_tensor.shape
+
+    # 处理 causal_mask
+    causal_mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().to(device)
+
+    # 处理 padding mask
+    if attention_mask.dim() == 2:
+        padding_mask = attention_mask[:, None, :, None]  # (bsz, 1, seq_len, 1)
+    elif attention_mask.dim() == 4:
+        padding_mask = attention_mask
+    else:
+        raise ValueError(
+            f"Attention mask dim should be `2` or `4`, but is {attention_mask.dim()}"
+        )
+
+    padding_mask = (padding_mask == 0).to(device)
+    combined_mask = padding_mask | causal_mask
+    return combined_mask
+
+
 class CustomPreTrainedModel(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
@@ -314,36 +343,6 @@ class CustomPreTrainedModel(nn.Module):
         )
         self.norm = CustomRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         _init_weights(config, self.modules)
-
-    def _update_causal_mask(
-        self, attention_mask: torch.LongTensor, input_tensor: torch.FloatTensor
-    ) -> torch.Tensor:
-        """
-        创建 causal_mask
-        :param attention_mask: (bsz, seq_len)
-        :param input_tensor: (bsz, seq_len, hidden_size)
-        """
-        dtype, device = input_tensor.dtype, input_tensor.device
-        bsz, seq_len, _ = input_tensor.shape
-
-        # 处理 causal_mask
-        causal_mask = torch.triu(
-            torch.ones(seq_len, seq_len), diagonal=1, device=device
-        ).bool()
-
-        # 处理 padding mask
-        if attention_mask.dim() == 2:
-            padding_mask = attention_mask[:, None, :, None]  # (bsz, 1, seq_len, 1)
-        elif attention_mask.dim() == 4:
-            padding_mask = attention_mask
-        else:
-            raise ValueError(
-                f"Attention mask dim should be `2` or `4`, but is {attention_mask.dim()}"
-            )
-
-        padding_mask = padding_mask == 0
-        combined_mask = padding_mask * causal_mask
-        return combined_mask
 
     def forward(
         self,
@@ -378,7 +377,7 @@ class CustomPreTrainedModel(nn.Module):
         if input_embeds is None:
             input_embeds = self.embed_tokens(input_ids)
 
-        attention_mask = self._update_causal_mask(attention_mask, input_embeds)
+        attention_mask = _update_causal_mask(attention_mask, input_embeds)
 
         hidden_states = input_embeds
 
@@ -408,7 +407,7 @@ class CustomForCausalLM(nn.Module):
         position_ids: Optional[torch.Tensor] = None,
         input_embeds: Optional[torch.FloatTensor] = None,
         labels: Optional[torch.LongTensor] = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         outputs = self.model(
             input_ids=input_ids,
