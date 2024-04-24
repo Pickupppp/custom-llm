@@ -3,6 +3,7 @@ from typing import Tuple, Union, Optional
 
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 
 class CustomRMSNorm(nn.Module):
@@ -308,7 +309,7 @@ def _update_causal_mask(
     :param attention_mask: (bsz, seq_len)
     :param input_tensor: (bsz, seq_len, hidden_size)
     """
-    dtype, device = input_tensor.dtype, input_tensor.device
+    device = input_tensor.device
     if input_tensor.dim() == 3:
         bsz, seq_len, _ = input_tensor.shape
     elif input_tensor.dim() == 2:
@@ -317,6 +318,10 @@ def _update_causal_mask(
         raise ValueError(
             f"Input tensor should have 2 or 3 dimensions, but has {input_tensor.dim()}"
         )
+
+    assert (
+        bsz == attention_mask.shape[0]
+    ), f"batch size should be equal, but got {bsz} and {attention_mask.shape[0]}"
 
     # 处理 causal_mask
     causal_mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().to(device)
@@ -366,9 +371,9 @@ class CustomPreTrainedModel(nn.Module):
                 "You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time"
             )
         elif input_ids is not None:
-            bsz, seq_len = input_ids.shape
+            _, seq_len = input_ids.shape
         elif input_embeds is not None:
-            bsz, seq_len, _ = input_embeds.shape
+            _, seq_len, _ = input_embeds.shape
         else:
             raise ValueError(
                 "You have to specify either decoder_input_ids or decoder_inputs_embeds"
@@ -390,8 +395,11 @@ class CustomPreTrainedModel(nn.Module):
         hidden_states = input_embeds
 
         for decoder_layer in self.layers:
-            layer_outputs = decoder_layer(
-                hidden_states, attention_mask=attention_mask, position_ids=position_ids
+            # layer_outputs = decoder_layer(
+            #     hidden_states, attention_mask=attention_mask, position_ids=position_ids
+            # )
+            layer_outputs = checkpoint(
+                decoder_layer, hidden_states, attention_mask, position_ids
             )
             hidden_states = layer_outputs
 
