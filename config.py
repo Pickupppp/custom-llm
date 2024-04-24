@@ -11,6 +11,7 @@ class CustomConfig:
         rms_norm_eps=1e-6,
         rope_theta=10000.0,
         attention_dropout=0.0,
+        pad_token_id=1,
     ) -> None:
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
@@ -23,3 +24,4 @@ class CustomConfig:
         self.rms_norm_eps = rms_norm_eps
         self.rope_theta = rope_theta
         self.attention_dropout = attention_dropout
+        self.pad_token_id = pad_token_id
