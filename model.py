@@ -143,7 +143,7 @@ class CustomAttention(nn.Module):
         self.config = config
 
         self.hidden_size = self.config.hidden_size
-        self.num_heads = self.config.num_heads
+        self.num_heads = self.config.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
         self.max_position_embeddings = self.config.max_position_embeddings
         self.rope_theta = self.config.rope_theta
@@ -205,19 +205,20 @@ class CustomAttention(nn.Module):
             query_states, key_states.transpose(-1, -2)
         ) / math.sqrt(self.head_dim)
 
-        if attn_weights.size() != (bsz, self.num_heads, seq_len, self.head_dim):
+        if attn_weights.size() != (bsz, self.num_heads, seq_len, seq_len):
             raise ValueError(
-                f"Attention weights should be of size {(bsz, self.num_heads, seq_len, self.head_dim)}, but is"
+                f"Attention weights should be of size {(bsz, self.num_heads, seq_len, seq_len)}, but is"
                 f" {attn_weights.size()}"
             )
 
+        # print(attention_mask)
         if attention_mask is not None:
-            if attention_mask.size() != (bsz, 1, seq_len, self.head_dim):
+            if attention_mask.size() != (bsz, 1, seq_len, seq_len):
                 raise ValueError(
-                    f"Attention mask should be of size {(bsz, 1, seq_len, self.head_dim)}, but is {attention_mask.size()}"
+                    f"Attention mask should be of size {(bsz, 1, seq_len, seq_len)}, but is {attention_mask.size()}"
                 )
 
-            attn_weights.masked_fill_(attention_mask, float("-inf"))
+            attn_weights.masked_fill_(attention_mask, -1e9)
 
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32
@@ -308,7 +309,14 @@ def _update_causal_mask(
     :param input_tensor: (bsz, seq_len, hidden_size)
     """
     dtype, device = input_tensor.dtype, input_tensor.device
-    bsz, seq_len, _ = input_tensor.shape
+    if input_tensor.dim() == 3:
+        bsz, seq_len, _ = input_tensor.shape
+    elif input_tensor.dim() == 2:
+        bsz, seq_len = input_tensor.shape
+    else:
+        raise ValueError(
+            f"Input tensor should have 2 or 3 dimensions, but has {input_tensor.dim()}"
+        )
 
     # 处理 causal_mask
     causal_mask = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool().to(device)
@@ -339,10 +347,10 @@ class CustomPreTrainedModel(nn.Module):
             config.vocab_size, config.hidden_size, padding_idx=self.padding_idx
         )
         self.layers = nn.ModuleList(
-            [CustomDecoderLayer(config) for _ in range(config.num_hidden_layer)]
+            [CustomDecoderLayer(config) for _ in range(config.num_hidden_layers)]
         )
         self.norm = CustomRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        _init_weights(config, self.modules)
+        _init_weights(config, self.modules())
 
     def forward(
         self,
@@ -398,7 +406,7 @@ class CustomForCausalLM(nn.Module):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        _init_weights(config, self.modules)
+        _init_weights(config, self.modules())
 
     def forward(
         self,
