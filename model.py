@@ -219,6 +219,8 @@ class CustomAttention(nn.Module):
                     f"Attention mask should be of size {(bsz, 1, seq_len, seq_len)}, but is {attention_mask.size()}"
                 )
 
+            # 使用混合精度时 -1e9 会报错 RuntimeError: value cannot be converted to type at::Half without overflow
+            # attn_weights.masked_fill_(attention_mask, -1e4)
             attn_weights.masked_fill_(attention_mask, -1e9)
 
         attn_weights = nn.functional.softmax(
