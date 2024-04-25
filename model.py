@@ -450,6 +450,27 @@ class CustomForCausalLM(nn.Module):
             loss = loss_fct(shift_logits, shift_labels)
         return (logits, loss)
 
+    def generate(self, text: str, tokenizer, max_new_tokens=50):
+        device = next(self.parameters()).device
+        outputs = tokenizer.encode(text)
+        # 去除最后的 <eos>
+        original_ids = outputs.ids[:-1]
+        original_attention_mask = outputs.attention_mask[:-1]
+        self.eval()
+        for _ in range(max_new_tokens):
+            input_ids = torch.tensor([original_ids]).to(device)
+            attention_mask = torch.tensor([original_attention_mask]).to(device)
+            with torch.no_grad():
+                logtis, _ = self(input_ids=input_ids, attention_mask=attention_mask)
+            logtis = logtis[:, -1, :]
+            _, token_ids = torch.max(logtis, dim=-1)
+            original_ids.append(token_ids.item())
+            original_attention_mask.append(1)
+
+            if token_ids == tokenizer.token_to_id("<|eos|>"):
+                break
+        return original_ids
+
 
 if __name__ == "__main__":
     a = torch.rand((2, 2, 10))
