@@ -450,6 +450,39 @@ class CustomForCausalLM(nn.Module):
             loss = loss_fct(shift_logits, shift_labels)
         return (logits, loss)
 
+    def generate(
+        self,
+        input_ids: torch.IntTensor,
+        stop_tokens: list[int],
+        attention_mask: torch.IntTensor,
+        max_new_tokens: Optional[int] = 50,
+        return_type: Optional[str] = None,
+    ):
+        # 去除最后的 <eos>
+        input_ids = input_ids[:, :-1]
+        attention_mask = attention_mask[:, :-1]
+
+        stop_tokens_id = torch.tensor(stop_tokens, dtype=torch.int32).unsqueeze(0)
+
+        for _ in range(max_new_tokens):
+            with torch.no_grad():
+                logits, _ = self(input_ids=input_ids, attention_mask=attention_mask)
+            logits = logits[:, -1, :]
+            _, token_ids = torch.max(logits, dim=-1, keepdim=True)
+            input_ids = torch.concat((input_ids, token_ids), dim=-1)
+            attention_mask = torch.concat(
+                (attention_mask, torch.ones(attention_mask.shape[0], 1)), dim=-1
+            )
+
+            mask = token_ids == stop_tokens_id
+            stopped = mask.any(dim=1).all().item()
+            if stopped:
+                break
+        if return_type == "pt":
+            return input_ids
+        else:
+            return input_ids.tolist()
+
     def generate(self, text: str, tokenizer, max_new_tokens=50):
         device = next(self.parameters()).device
         outputs = tokenizer.encode(text)
@@ -474,5 +507,10 @@ class CustomForCausalLM(nn.Module):
 
 if __name__ == "__main__":
     a = torch.rand((2, 2, 10))
-    print(a.shape)
-    print(a.size())
+    print(a[:, -1, :].shape)
+    b = torch.rand((1, 2, 10))
+    print(b[:, -1, :].shape)
+    _, c = torch.max(b[:, -1, :], dim=-1, keepdim=True)
+    print(c.shape)
+    print(a.tolist())
+    # print(a.size())
