@@ -357,6 +357,7 @@ class CustomPreTrainedModel(nn.Module):
             [CustomDecoderLayer(config) for _ in range(config.num_hidden_layers)]
         )
         self.norm = CustomRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.graident_checkpoint = False
         _init_weights(config, self.modules())
 
     def forward(
@@ -397,12 +398,17 @@ class CustomPreTrainedModel(nn.Module):
         hidden_states = input_embeds
 
         for decoder_layer in self.layers:
-            # layer_outputs = decoder_layer(
-            #     hidden_states, attention_mask=attention_mask, position_ids=position_ids
-            # )
-            layer_outputs = checkpoint(
-                decoder_layer, hidden_states, attention_mask, position_ids
-            )
+            if self.training and self.graident_checkpoint:
+                layer_outputs = checkpoint(
+                    decoder_layer, hidden_states, attention_mask, position_ids
+                )
+            else:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                )
+
             hidden_states = layer_outputs
 
         hidden_states = self.norm(hidden_states)
@@ -417,6 +423,9 @@ class CustomForCausalLM(nn.Module):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         _init_weights(config, self.modules())
+
+    def enable_gradient_checkpoint(self):
+        self.model.graident_checkpoint = True
 
     def forward(
         self,

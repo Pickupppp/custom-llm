@@ -28,12 +28,14 @@ tokenizer.post_processor = TemplateProcessing(
 tokenizer.enable_padding(pad_id=tokenizer.token_to_id("<|eos|>"), pad_token="<|eos|>")
 
 # 训练参数
-num_epochs = 7
+num_epochs = 3
 batch_size = 1
 gradient_accumulation = 16
-lr = 2e-4
+lr = 1e-4
 weight_decay = 0.01
 max_norm = 1.0
+warm_up_ratio = 0.03
+gradient_checkpoint = False
 effective_batch_size = gradient_accumulation * batch_size
 
 # 数据集准备
@@ -74,13 +76,15 @@ print(f"Model size is {get_model_size(model)}")
 optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 scheduler = get_linear_schedule_with_warmup(
     optimizer=optimizer,
-    num_warmup_steps=0.1 * num_training_steps,
+    num_warmup_steps=int(warm_up_ratio * num_training_steps),
     num_training_steps=num_training_steps,
 )
 
 
 model = model.to(device)
 model.train()
+if gradient_checkpoint:
+    model.enable_gradient_checkpoint()
 progress_bar = tqdm(range(num_training_steps))
 for epoch in range(num_epochs):
     for idx, batch in enumerate(data_loader):
@@ -91,12 +95,8 @@ for epoch in range(num_epochs):
         loss.backward()
 
         if (idx + 1) % gradient_accumulation == 0:
-            # 确保梯度没有溢出
-            # scaler.unscale_(optimizer)
             # 梯度裁剪
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=max_norm)
-            # scaler.step(optimizer)
-            # scaler.update()
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
