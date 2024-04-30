@@ -34,7 +34,7 @@ trainer = BpeTrainer(
 
 
 # 训练 tokenizer
-tokenizer.train(files=["data/train.csv", "data/test.csv"], trainer=trainer)
+tokenizer.train(files=["wikitext.txt"], trainer=trainer)
 
 # 保存 tokenizer
 tokenizer.save("tokenizer.json")

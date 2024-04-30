@@ -330,7 +330,7 @@ def _update_causal_mask(
 
     # 处理 padding mask
     if attention_mask.dim() == 2:
-        padding_mask = attention_mask[:, None, :, None]  # (bsz, 1, seq_len, 1)
+        padding_mask = attention_mask[:, None, None, :]  # (bsz, 1, 1, seq_len)
     elif attention_mask.dim() == 4:
         padding_mask = attention_mask
     else:
@@ -515,11 +515,19 @@ class CustomForCausalLM(nn.Module):
 
 
 if __name__ == "__main__":
-    a = torch.rand((2, 2, 10))
-    print(a[:, -1, :].shape)
-    b = torch.rand((1, 2, 10))
-    print(b[:, -1, :].shape)
-    _, c = torch.max(b[:, -1, :], dim=-1, keepdim=True)
-    print(c.shape)
-    print(a.tolist())
+    # a = torch.rand((2, 2, 10))
+    # print(a[:, -1, :].shape)
+    # b = torch.rand((1, 2, 10))
+    # print(b[:, -1, :].shape)
+    # _, c = torch.max(b[:, -1, :], dim=-1, keepdim=True)
+    # print(c.shape)
+    # print(a.tolist())
     # print(a.size())
+    a = torch.rand(2, 5, 10)
+    mask = torch.tensor([
+        [1, 1, 1, 0, 0],
+        [1, 1, 1, 1, 1]
+    ])
+    print(mask.shape)
+    cal_mask = _update_causal_mask(mask, a)
+    print(cal_mask)
