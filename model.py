@@ -1,5 +1,5 @@
 import math
-from typing import Tuple, Union, Optional
+from typing import Lsit, Tuple, Union, Optional
 
 import torch
 from torch import nn
@@ -212,7 +212,6 @@ class CustomAttention(nn.Module):
                 f" {attn_weights.size()}"
             )
 
-        # print(attention_mask)
         if attention_mask is not None:
             if attention_mask.size() != (bsz, 1, seq_len, seq_len):
                 raise ValueError(
@@ -221,6 +220,7 @@ class CustomAttention(nn.Module):
 
             # 使用混合精度时 -1e9 会报错 RuntimeError: value cannot be converted to type at::Half without overflow
             # attn_weights.masked_fill_(attention_mask, -1e4)
+            # 设置为 float(-inf) 损失可能变成 nan
             attn_weights.masked_fill_(attention_mask, -1e9)
 
         attn_weights = nn.functional.softmax(
@@ -462,7 +462,7 @@ class CustomForCausalLM(nn.Module):
     def generate(
         self,
         input_ids: torch.IntTensor,
-        stop_tokens: list[int],
+        stop_tokens: Lsit[int],
         attention_mask: torch.IntTensor,
         max_new_tokens: Optional[int] = 50,
         return_type: Optional[str] = None,
@@ -524,10 +524,7 @@ if __name__ == "__main__":
     # print(a.tolist())
     # print(a.size())
     a = torch.rand(2, 5, 10)
-    mask = torch.tensor([
-        [1, 1, 1, 0, 0],
-        [1, 1, 1, 1, 1]
-    ])
+    mask = torch.tensor([[1, 1, 1, 0, 0], [1, 1, 1, 1, 1]])
     print(mask.shape)
     cal_mask = _update_causal_mask(mask, a)
     print(cal_mask)
