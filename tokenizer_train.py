@@ -1,40 +1,48 @@
-from tokenizers import Tokenizer, decoders, normalizers, pre_tokenizers, processors
-from tokenizers.models import BPE
-from tokenizers.normalizers import NFD, Lowercase, StripAccents
-from tokenizers.pre_tokenizers import ByteLevel, Digits, Punctuation, Whitespace
-from tokenizers.processors import TemplateProcessing
-from tokenizers.trainers import BpeTrainer
+from tokenizers import (
+    decoders,
+    models,
+    normalizers,
+    pre_tokenizers,
+    processors,
+    trainers,
+    Tokenizer,
+)
+from datasets import load_dataset, Dataset
 
-# 初始化 tokenizer
-tokenizer = Tokenizer(BPE())
-
-# 规范化
-normalizer = normalizers.Sequence([NFD(), StripAccents()])
-tokenizer.normalizer = normalizer
-
-# 设置预分词器
-pre_tokenizer = pre_tokenizers.Sequence(
+tokenizer = Tokenizer(models.BPE())
+tokenizer.normalizer = normalizers.NFC()
+tokenizer.pre_tokenizer = pre_tokenizers.Sequence(
     [
-        Whitespace(),
-        Punctuation(),
-        Digits(individual_digits=True),
-        ByteLevel(),
+        pre_tokenizers.Digits(individual_digits=True),
+        pre_tokenizers.ByteLevel(add_prefix_space=False),
     ]
 )
-tokenizer.pre_tokenizer = pre_tokenizer
+trainer = trainers.BpeTrainer(
+    vocab_size=65535,
+    special_tokens=["<|system|>", "<|user|>", "<|assistant|>", "<|end|>"],
+    min_frequency=1500,
+)
 
+tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
 tokenizer.decoder = decoders.ByteLevel()
-tokenizer.post_processor = processors.ByteLevel()
 
-
-# 训练
-trainer = BpeTrainer(
-    special_tokens=["<|bos|>", "<|eos|>", "<|system|>", "<|user|>", "<|assistant|>"]
+dataset: Dataset = load_dataset(
+    "json",
+    data_files=[
+        "nlp_datas/part-000020-a894b46e.jsonl.tar.gz",
+        "nlp_datas/part-000065-a894b46e.jsonl.tar.gz",
+    ],
+    split="train",
 )
 
 
-# 训练 tokenizer
-tokenizer.train(files=["wikitext.txt"], trainer=trainer)
+def get_training_corpus():
+    for i in range(0, len(dataset), 1000):
+        yield dataset[i : i + 1000]["content"]
+
+
+tokenizer.train_from_iterator(get_training_corpus(), trainer=trainer)
+
 
 # 保存 tokenizer
-tokenizer.save("tokenizer.json")
+tokenizer.save("tokenizer_new.json")
