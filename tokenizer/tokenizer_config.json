@@ -1,0 +1,49 @@
+{
+  "added_tokens_decoder": {
+    "0": {
+      "content": "<|system|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "1": {
+      "content": "<|user|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "2": {
+      "content": "<|assistant|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "3": {
+      "content": "<|end|>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    }
+  },
+  "additional_special_tokens": [
+    "<|system|>",
+    "<|user|>",
+    "<|assistant|>",
+    "<|end|>"
+  ],
+  "bos_token": null,
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "<|end|>",
+  "model_max_length": 8192,
+  "pad_token": "<|end|>",
+  "tokenizer_class": "CustomTokenizer",
+  "unk_token": "<|end|>"
+}
