@@ -10,7 +10,7 @@ from transformers import get_linear_schedule_with_warmup
 
 from config import CustomConfig
 from dataset import CustomDataset
-from model import CustomForCausalLM
+from modeling_custom import CustomForCausalLM
 from utils import get_model_size, data_collator_closure
 
 torch.manual_seed(42)
