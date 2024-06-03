@@ -221,8 +221,10 @@ class CustomAttention(nn.Module):
             # 使用混合精度时 -1e9 会报错 RuntimeError: value cannot be converted to type at::Half without overflow
             # attn_weights.masked_fill_(attention_mask, -1e4)
             # 设置为 float(-inf) 损失可能变成 nan
-            attn_weights.masked_fill_(attention_mask, -1e9)
+            # attn_weights.masked_fill_(attention_mask, -1e9)
+            attn_weights = attn_weights + attention_mask
 
+        # softmax 时需要 upcast
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32
         ).to(query_states.dtype)
@@ -312,6 +314,7 @@ def _update_causal_mask(
     :param input_tensor: (bsz, seq_len, hidden_size)
     """
     device = input_tensor.device
+    dtype = input_tensor.dtype
     if input_tensor.dim() == 3:
         bsz, seq_len, _ = input_tensor.shape
     elif input_tensor.dim() == 2:
@@ -340,7 +343,9 @@ def _update_causal_mask(
 
     padding_mask = (padding_mask == 0).to(device)
     combined_mask = padding_mask | causal_mask
-    return combined_mask
+    causal_4d_mask = torch.zeros_like(combined_mask, device=device, dtype=dtype)
+    causal_4d_mask = causal_4d_mask.masked_fill(combined_mask, torch.finfo(dtype).min)
+    return causal_4d_mask
 
 
 class CustomPreTrainedModel(nn.Module):

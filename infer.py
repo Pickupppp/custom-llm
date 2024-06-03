@@ -4,7 +4,7 @@ from tokenizers import Tokenizer
 from tokenizers.processors import TemplateProcessing
 
 from config import CustomConfig
-from model import CustomForCausalLM
+from modeling_custom import CustomForCausalLM
 
 torch.manual_seed(42)
 random.seed(42)
