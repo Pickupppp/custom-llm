@@ -1,5 +1,5 @@
 import math
-from typing import Lsit, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional
 
 import torch
 from torch import nn
@@ -467,7 +467,7 @@ class CustomForCausalLM(nn.Module):
     def generate(
         self,
         input_ids: torch.IntTensor,
-        stop_tokens: Lsit[int],
+        stop_tokens: List[int],
         attention_mask: torch.IntTensor,
         max_new_tokens: Optional[int] = 50,
         return_type: Optional[str] = None,
