@@ -467,56 +467,31 @@ class CustomForCausalLM(nn.Module):
     def generate(
         self,
         input_ids: torch.IntTensor,
-        stop_tokens: List[int],
         attention_mask: torch.IntTensor,
         max_new_tokens: Optional[int] = 50,
-        return_type: Optional[str] = None,
+        temperature: float = 0.95,
     ):
-        # 去除最后的 <eos>
-        input_ids = input_ids[:, :-1]
-        attention_mask = attention_mask[:, :-1]
-
-        stop_tokens_id = torch.tensor(stop_tokens, dtype=torch.int32).unsqueeze(0)
-
-        for _ in range(max_new_tokens):
-            with torch.no_grad():
-                logits, _ = self(input_ids=input_ids, attention_mask=attention_mask)
-            logits = logits[:, -1, :]
-            _, token_ids = torch.max(logits, dim=-1, keepdim=True)
-            input_ids = torch.concat((input_ids, token_ids), dim=-1)
-            attention_mask = torch.concat(
-                (attention_mask, torch.ones(attention_mask.shape[0], 1)), dim=-1
-            )
-
-            mask = token_ids == stop_tokens_id
-            stopped = mask.any(dim=1).all().item()
-            if stopped:
-                break
-        if return_type == "pt":
-            return input_ids
-        else:
-            return input_ids.tolist()
-
-    def generate(self, text: str, tokenizer, max_new_tokens=50):
-        device = next(self.parameters()).device
-        outputs = tokenizer.encode(text)
-        # 去除最后的 <eos>
-        original_ids = outputs.ids[:-1]
-        original_attention_mask = outputs.attention_mask[:-1]
+        device = input_ids.device
         self.eval()
-        for _ in range(max_new_tokens):
-            input_ids = torch.tensor([original_ids]).to(device)
-            attention_mask = torch.tensor([original_attention_mask]).to(device)
-            with torch.no_grad():
-                logtis, _ = self(input_ids=input_ids, attention_mask=attention_mask)
-            logtis = logtis[:, -1, :]
-            _, token_ids = torch.max(logtis, dim=-1)
-            original_ids.append(token_ids.item())
-            original_attention_mask.append(1)
+        _input_ids = input_ids.tolist()
+        _attention_mask = attention_mask.tolist()
+        generate_ids = []
 
-            if token_ids == tokenizer.token_to_id("<|eos|>"):
-                break
-        return original_ids
+        while len(generate_ids) < max_new_tokens:
+            input_ids = torch.tensor(_input_ids, device=device)
+            attention_mask = torch.tensor(_attention_mask, device=device)
+
+            with torch.inference_mode():
+                logtis = self(input_ids=input_ids, attention_mask=attention_mask)
+                logits = logtis[0, -1, :] / temperature
+                probs = nn.functional.softmax(logits, dim=-1)
+                ids = torch.argmax(probs)
+
+            _input_ids.append(ids.cpu().item)
+            _attention_mask.append(1)
+            generate_ids.append(ids.cpu().item)
+
+        return generate_ids
 
 
 if __name__ == "__main__":
