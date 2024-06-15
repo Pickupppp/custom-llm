@@ -1,13 +1,13 @@
+from datasets import Dataset, load_dataset
 from tokenizers import (
+    Tokenizer,
     decoders,
     models,
     normalizers,
     pre_tokenizers,
     processors,
     trainers,
-    Tokenizer,
 )
-from datasets import load_dataset, Dataset
 
 tokenizer = Tokenizer(models.BPE())
 tokenizer.normalizer = normalizers.NFC()

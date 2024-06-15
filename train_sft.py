@@ -17,7 +17,7 @@ from tqdm import tqdm
 from config import CustomConfig
 from modeling_custom import CustomForCausalLM
 from tokenization_custom import CustomTokenizer
-from utils import get_model_size, SupervisedDataset
+from utils import SupervisedDataset, get_model_size
 
 SEED = 42
 

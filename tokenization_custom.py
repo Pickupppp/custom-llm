@@ -1,5 +1,6 @@
-from transformers import PreTrainedTokenizerFast, AddedToken
 from typing import Optional, Tuple
+
+from transformers import AddedToken, PreTrainedTokenizerFast
 
 
 class CustomTokenizer(PreTrainedTokenizerFast):
